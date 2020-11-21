@@ -109,7 +109,6 @@ class MDPAgent(Agent):
     # Original Part start------------------------------------
     def __init__(self):
         print "Starting up MDPAgent!"
-        name = "Pacman"
 
     # Gets run after an MDPAgent object is created and once there is
     # game state to access.
@@ -123,6 +122,11 @@ class MDPAgent(Agent):
         self.width = self.map.getWidth()
         self.height = self.map.getHeight()
         self.gamma = 0.9
+
+        self.lastState = None
+        self.currentState = None
+        self.remainFood = 0
+
         print "Running registerInitialState for MDPAgent!"
         print "I'm at:"
         print api.whereAmI(state)
@@ -205,19 +209,15 @@ class MDPAgent(Agent):
     #Util end-------------------------------------------------------------
 
     #Reward start---------------------------------------------------------
-    def rewardFunction(self,state,pos,action):
-        weightOfFood = 20
-        weightOfSocialDistance = 80
-        reward = weightOfFood * self.foodValue(state,pos,action) + weightOfSocialDistance * self.socialDistanceValue(state,pos)
+    def getRewards(self, state, pos):
+        reward = self.rewardFunction(state, pos)
         return reward
 
-    def getRewards(self,state,actions):
-        pos = api.whereAmI(state)
-        rewards = []
-        for action in actions:
-            newPos = self.positionAfterMove(pos, action)
-            rewards.append(self.rewardFunction(state,newPos,action))
-        return rewards
+    def rewardFunction(self,state,pos):
+        weightOfFood = 20
+        weightOfSocialDistance = 80
+        reward = weightOfFood * self.foodValue(state,pos) + weightOfSocialDistance * self.socialDistanceValue(state,pos)
+        return reward
 
     def socialDistanceValue(self,state,pos):
         DISTANCEASCLOSE = 3
@@ -247,35 +247,21 @@ class MDPAgent(Agent):
         ghostPossibleMovement.append(ghostPos)
         return ghostPossibleMovement
 
-    #need to be change
-    def foodValue(self,state,pos,action):
+    def foodValue(self,state,pos):
         DISTANCEASCLOSE = 3
 
         food = api.food(state)
-        directionCount = self.foodCountWithDirection(state,pos,action)
-        directionWithRangeCount = self.foodCountWithDirection(state,pos,api.distanceLimited(food,state,DISTANCEASCLOSE))
+        nearbyFood = api.distanceLimited(food,state,DISTANCEASCLOSE)
+        value = nearbyFood/self.remainFood
 
-        #mostly<1
-        overallValue = directionCount/len(food) + directionWithRangeCount/16
-        return overallValue
-
-    def foodCountWithDirection(self,pos,action,foods):
-        count = 0
-        for food in foods:
-            if (action == Directions.NORTH and food[1]>=pos[1] ):
-                count += 1
-            if (action == Directions.SOUTH and food[1]<=pos[1] ):
-                count += 1
-            if (action == Directions.WEST and food[0]<=pos[0] ):
-                count += 1
-            if (action == Directions.EAST and food[0]>=pos[0] ):
-                count += 1
-        return count
+        return value
     #Reward end------------------------------------------------------------
 
-
-    #Not finished
+    # Algorithm start------------------------------------------------------
     def algorithm(self,state):
+        self.lastState = self.currentState
+        self.currentState = state
+        self.remainFood = len(api.food(state)) + len(api.capsules(state))
         actions = api.legalActions(state)
         if Directions.STOP in actions:
             actions.remove(Directions.STOP)
@@ -289,7 +275,7 @@ class MDPAgent(Agent):
         i,j = api.whereAmI()
         chosenActionDir = policyMap[i][j]
 
-        return api.makeMove(actions[chosenActionDir], actions)
+        return api.makeMove(chosenActionDir, actions)
 
     def initialMap(self):
         policyMap = []
@@ -302,10 +288,10 @@ class MDPAgent(Agent):
 
     def initialUtilMap(self):
         utilMap = []
-        for i in range(self.height):
+        for i in range(self.width):
             utilRow = []
-            for j in range(self.width):
-                if self.map.getValue(j,i) != '%':
+            for j in range(self.height):
+                if self.map.getValue(i,j) != '%':
                     utilRow.append(0)
                 else:
                     utilRow.append(-1)
@@ -318,20 +304,12 @@ class MDPAgent(Agent):
             for j in range(self.width-2):
                 pos = (i+1,j+1)
                 if utilMap[i+1][j+1] != -1:
-                    reward = self.rewardFunction(state,pos)
+                    reward = self.getRewards(state,pos)
                     newUtilMap[i + 1][j + 1] = reward
                     if policyMap[i+1][j+1] != None:
-                        expect = self.randomActionP * self.policySelection(utilMap,policyMap,pos) + (1 - self.randomActionP) * self.randomNearbyAction(utilMap,pos)
+                        expect = self.randomActionP * policyMap[i+1][j+1] + (1 - self.randomActionP) * self.randomNearbyAction(utilMap,pos)
                         newUtilMap[i+1][j+1] += self.gamma * expect
         return newUtilMap
-
-
-    def policySelection(self,utilMap,policyMap,pos):
-        policy = policyMap[pos[0]][pos[1]]
-        if policy != None:
-            return self.positionAfterMove(pos,policy)
-
-        return self.positionAfterMove(pos,self.selectLagrestNearby(utilMap,pos))
 
     def policyImprovement(self,utilMap,policyMap):
         for i in range(self.height - 2):
@@ -361,6 +339,8 @@ class MDPAgent(Agent):
                 value += utilMap[i][j]
                 count += 1
         return value / count
+    # Algorithm end--------------------------------------------------------
+
 
 
 
