@@ -118,6 +118,11 @@ class MDPAgent(Agent):
         self.addWallsToMap(state)
         self.updateFoodInMap(state)
         self.map.display()
+
+        self.randomActionP = 0.8
+        self.width = self.map.getWidth()
+        self.height = self.map.getHeight()
+        self.gamma = 0.9
         print "Running registerInitialState for MDPAgent!"
         print "I'm at:"
         print api.whereAmI(state)
@@ -188,26 +193,18 @@ class MDPAgent(Agent):
         else: newPos = pos
         return newPos
 
+    def convertNumDir(self,num):
+        if num == 0: return Directions.STOP
+        if num == 1: return Directions.NORTH
+        if num == 2: return Directions.SOUTH
+        if num == 3: return Directions.WEST
+        if num == 4: return Directions.EAST
+
     def distanceBetween(self,pos1,pos2):
         return util.manhattanDistance(pos1,pos2)
     #Util end-------------------------------------------------------------
 
-
-
-
-
-    def algorithm(self,state):
-        actions = api.legalActions(state)
-        if Directions.STOP in actions:
-            actions.remove(Directions.STOP)
-
-        rewards = self.getRewards(state,actions)
-
-        chosenActionIndex = rewards.index(max(rewards))
-
-        return api.makeMove(actions[chosenActionIndex], actions)
-
-
+    #Reward start---------------------------------------------------------
     def rewardFunction(self,state,pos,action):
         weightOfFood = 20
         weightOfSocialDistance = 80
@@ -274,6 +271,104 @@ class MDPAgent(Agent):
             if (action == Directions.EAST and food[0]>=pos[0] ):
                 count += 1
         return count
+    #Reward end------------------------------------------------------------
+
+
+    #Not finished
+    def algorithm(self,state):
+        actions = api.legalActions(state)
+        if Directions.STOP in actions:
+            actions.remove(Directions.STOP)
+
+        utilMap,policyMap = self.initialMap()
+
+        for n in range(10):
+            utilMap = self.policyEvaluation(state,utilMap,policyMap)
+            policyMap = self.policyImprovement(utilMap,policyMap)
+
+        i,j = api.whereAmI()
+        chosenActionDir = policyMap[i][j]
+
+        return api.makeMove(actions[chosenActionDir], actions)
+
+    def initialMap(self):
+        policyMap = []
+        for i in range(self.height):
+            policyRow = []
+            for j in range(self.width):
+                policyRow.append(None)
+            policyMap.append(policyRow)
+        return self.initialUtilMap(),policyMap
+
+    def initialUtilMap(self):
+        utilMap = []
+        for i in range(self.height):
+            utilRow = []
+            for j in range(self.width):
+                if self.map.getValue(j,i) != '%':
+                    utilRow.append(0)
+                else:
+                    utilRow.append(-1)
+            utilMap.append(utilRow)
+        return utilMap
+
+    def policyEvaluation(self,state, utilMap, policyMap):
+        newUtilMap = self.initialUtilMap()
+        for i in range(self.height-2):
+            for j in range(self.width-2):
+                pos = (i+1,j+1)
+                if utilMap[i+1][j+1] != -1:
+                    reward = self.rewardFunction(state,pos)
+                    newUtilMap[i + 1][j + 1] = reward
+                    if policyMap[i+1][j+1] != None:
+                        expect = self.randomActionP * self.policySelection(utilMap,policyMap,pos) + (1 - self.randomActionP) * self.randomNearbyAction(utilMap,pos)
+                        newUtilMap[i+1][j+1] += self.gamma * expect
+        return newUtilMap
+
+
+    def policySelection(self,utilMap,policyMap,pos):
+        policy = policyMap[pos[0]][pos[1]]
+        if policy != None:
+            return self.positionAfterMove(pos,policy)
+
+        return self.positionAfterMove(pos,self.selectLagrestNearby(utilMap,pos))
+
+    def policyImprovement(self,utilMap,policyMap):
+        for i in range(self.height - 2):
+            for j in range(self.width - 2):
+                if utilMap[i + 1][j + 1] != -1:
+                    policyMap[i + 1][j + 1] = self.selectLagrestNearby(utilMap,(i + 1, j + 1))
+
+    def selectLagrestNearby(self,utilMap,pos):
+        max_i = 0
+        max_j = 0
+        for n in range(5):
+            dir = self.convertNumDir(n)
+            (new_i, new_j) = self.positionAfterMove((pos[0],pos[1]), dir)
+            if (utilMap[new_i][new_j] > utilMap[max_i][max_j]):
+                max_i = new_i
+                max_j = new_j
+                max_dir = dir
+        return max_dir
+
+    def randomNearbyAction(self,utilMap,pos):
+        count = 0
+        value = 0
+        for n in range(5):
+            dir = self.convertNumDir(n)
+            (i, j) = self.positionAfterMove((pos[0], pos[1]), dir)
+            if (utilMap[i][j] != -1):
+                value += utilMap[i][j]
+                count += 1
+        return value / count
+
+
+
+
+
+
+
+
 
 
 
